@@ -1,0 +1,21 @@
+#!/bin/sh
+# Start an agent in its own herdr tab, with AGENT_NAME set, and hand it its brief.
+# usage: team/spawn <name>      (write team/briefs/<name>.md first)
+# AGENT_CMD overrides the command (default: claude --permission-mode auto);
+# AGENT_READY is a regex for its ready screen (default: auto mode on).
+set -eu
+n=$1
+dir=$(cd "$(dirname "$0")" && pwd); root=$(dirname "$dir")
+[ -f "$dir/briefs/$n.md" ] || { echo "write team/briefs/$n.md first" >&2; exit 1; }
+p=$(herdr tab create --workspace "${HERDR_WORKSPACE_ID:?run this inside herdr}" --cwd "$root" --label "$n" \
+      --env AGENT_NAME="$n" --no-focus \
+    | python3 -c 'import sys,json;print(json.load(sys.stdin)["result"]["root_pane"]["pane_id"])')
+sleep 3
+herdr pane send-text "$p" "${AGENT_CMD:-claude --permission-mode auto}" >/dev/null
+herdr pane send-keys "$p" enter >/dev/null
+herdr pane wait-output "$p" --regex "${AGENT_READY:-auto mode on}" --timeout 60000 >/dev/null
+sleep 2
+herdr agent rename "$p" "$n" >/dev/null
+herdr agent prompt "$n" "You are '$n' on a team led by 'lead'. Read CLAUDE.md, team/PROTOCOL.md, team/DECISIONS.md, team/INTERFACES.md, then your brief team/briefs/$n.md, and skim team/log.md for messages to you. Then start. Your shell has AGENT_NAME=$n set, so message with: team/msg <to> \"...\". Send lead a short 'started:' message with your plan once you've read everything." >/dev/null
+grep -qx "$n" "$dir/roster" || echo "$n" >> "$dir/roster"
+echo "$n started in pane $p"
